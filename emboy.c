@@ -3,11 +3,6 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-/*
-Goal: absurdly tiny Gameboy emulator
-Present status: runs 25% of possible instructions, no i/o
-*/
-
 #define ROMSIZE 1048576
 
 #define u8 uint8_t
@@ -165,11 +160,22 @@ void cpu_run_cycle( void ) {
 
 	if ( opcode <  0x40 ) {
 		switch( opcode & 0x07 ) {
-			case 0x00: //NOT DONE
-				if ( opcode == 0x00 ) { // NOP
+			case 0x00: //done? concerned about this one
+				if ( opcode & 0x28 != 0 ) {
 					regs.pc++;
 					return;
 				}
+				a = 1;
+				if ( opcode == 0x08 )
+					mem_write( mem_read16( regs.pc++ ), regs.sp );
+				else 
+					b = mem_read( regs.pc+1 );
+					a = opcode & 0x20 ? 
+							opcode & 0x10 ? 
+								opcode & 0x08 ? regs.fc : !regs.fc 
+								: opcode & 0x08 ? regs.fz : !regs.fz
+						: b;
+				regs.pc += (int8_t)a;
 				break;
 			case 0x01: //done
 				if ( opcode & 0x80 ) {
