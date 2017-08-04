@@ -58,9 +58,7 @@ typedef enum {
 	OP_AND = 4,
 	OP_XOR = 5,
 	OP_OR = 6,
-	OP_CP = 7,
-	OP_INC = 8,
-	OP_DEC = 9
+	OP_CP = 7
 } alu_op_t;
 
 uint32_t romsize;
@@ -166,27 +164,39 @@ void cpu_run_cycle( void ) {
 			mem_read( regs.pc + 1 ), mem_read16( regs.pc + 1 ), opcode );
 
 	if ( opcode <  0x40 ) {
-
-		switch( opcode & 0x0F ) {
-			case 0x00:
+		switch( opcode & 0x07 ) {
+			case 0x00: //NOT DONE
 				if ( opcode == 0x00 ) { // NOP
 					regs.pc++;
 					return;
 				}
 				break;
-			case 0x01:
-				*(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 ))) = mem_read16( regs.pc + 1 );
-				regs.pc += 3;
+			case 0x01: //done
+				if ( opcode & 0x80 ) {
+					*(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 ))) = mem_read16( regs.pc + 1 );
+					regs.pc += 3;
+				} else {
+					regs.hl = ( a = regs.hl ) + *(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 )));
+					f( regs.fz, 0, regs.hl < a, (regs.hl&0xF0) != (a&0xF0) )
+					regs.pc += 1;
+				}
 				return;
-			case 0x04:
-			case 0x05:
-			case 0x0c:
-			case 0x0d:
+			case 0x02:
+				break;
+			case 0x03:
+				break;
+			case 0x04: //done
+			case 0x05: //done
 				a = reg_read_indirect( op_selector ), b = a;
 				reg_write_indirect( op_selector, a + ( opcode & 0x01 ? -1 : 1 ) );
-				f( a==0, opcode & 0x01,  a&0xF0 != b&0xf0, regs.fc );
+				f( a==0, opcode & 0x01,  (a&0xF0) != (b&0xf0), regs.fc );
 				regs.pc++;
 				return;
+			case 0x06: //done
+				reg_write_indirect( op_selector, mem_read( regs.pc+1 ) );
+				regs.pc+=2;
+				return;
+			case 0x07:
 			default:
 				break;
 		}
@@ -218,17 +228,6 @@ void cpu_run_cycle( void ) {
 
 int main( int argc, char** argv ) {
 	FILE* f = fopen( argv[1], "r" );
-
-	regs.f = 0;
-	printf( "regs.f: %02x\n", regs.f );
-	regs.fz = 1;
-	printf( "set regs.fz: %02x\n", regs.f );
-	regs.fn = 1;
-	printf( "set regs.fn: %02x\n", regs.f );
-	regs.fh = 1;
-	printf( "set regs.fh: %02x\n", regs.f );
-	regs.fc = 1;
-	printf( "set regs.fc: %02x\n", regs.f );
 
 	printf( "%s:%ib\n", argv[1], fread( rom, 1, ROMSIZE, f ) );
 	while (1) { cpu_run_cycle(); usleep( argc > 2 ? 500000 : 2 ); };
