@@ -2,7 +2,7 @@ CC ?= gcc
 CFLAGS ?= -g
 
 emboy: emboy.c
-    $(CC) $(CFLAGS) -o $@ $<
+	$(CC) $(CFLAGS) -o $@ $<
 
 clean:
 	-@rm emboy
