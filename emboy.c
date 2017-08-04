@@ -148,6 +148,9 @@ void alu_op( uint8_t op, ireg_t r ) {
 	}
 }
 
+#define push(v) mem_write(sp--,val);
+#define pop(v) v=mem_read(sp++);
+
 void cpu_run_cycle( void ) {
 	uint8_t opcode = mem_read( regs.pc );
 	uint8_t op_selector = ( opcode >> 3 ) & 0x07;
@@ -176,7 +179,7 @@ void cpu_run_cycle( void ) {
 								: opcode & 0x08 ? regs.fz : !regs.fz
 						: b;
 				regs.pc += (int8_t)a;
-				break;
+				return;
 			case 0x01: //done
 				if ( opcode & 0x80 ) {
 					*(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 ))) = mem_read16( regs.pc + 1 );
@@ -187,10 +190,17 @@ void cpu_run_cycle( void ) {
 					regs.pc += 1;
 				}
 				return;
-			case 0x02:
-				break;
-			case 0x03:
-				break;
+			case 0x02: //done
+				if ( opcode & 0x08 )
+					regs.a = mem_read( opcode & 0x20 ? regs.hl : opcode & 0x10 ? regs.de : regs.bc );
+				else
+					mem_write( opcode & 0x20 ? regs.hl : opcode & 0x10 ? regs.de : regs.bc, regs.a );
+				regs.pc++;
+				return;
+			case 0x03: //done
+				*(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 ))) += opcode & 0x8 ? -1 : 1;
+				regs.pc++;
+				return;
 			case 0x04: //done
 			case 0x05: //done
 				a = reg_read_indirect( op_selector ), b = a;
