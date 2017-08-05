@@ -30,11 +30,12 @@ struct regs_s{
 	dreg(b,c)
 	dreg(d,e)
 	dreg(h,l)
-	uint16_t sp;
-	uint16_t pc;
+	u16 sp;
+	u16 pc;
+	u8 ifl;
 } regs;
 
-#define f( z, n, h, c ) regs.fz=z;regs.fn=n;regs.fh=h;regs.fc=c;
+#define f( z, n, h, c ) regs.fz=(z);regs.fn=(n);regs.fh=(h);regs.fc=(c);
 
 u8* ri[] = {&regs.b,&regs.c,&regs.d,&regs.e,&regs.h,&regs.l,0,&regs.a};
 
@@ -109,7 +110,6 @@ void reg_write_indirect( ireg_t r, uint8_t value ) {
 		*ri[r] = value;
 }
 
-
 void alu_op( uint8_t op, ireg_t r ) {
 	uint8_t carry = regs.f;
 	u16 a = regs.a, s = reg_read_indirect( r );
@@ -150,8 +150,13 @@ void alu_op( uint8_t op, ireg_t r ) {
 	}
 }
 
-#define push(v) mem_write(sp--,val);
-#define pop(v) v=mem_read(sp++);
+void cb( u8 opcode ) {
+	printf( "cb unimplemented\n" );
+	exit( 0 );
+}
+
+#define push(v) mem_write(regs.sp--,v);
+#define pop(v) mem_read(regs.sp++)
 
 void cpu_run_cycle( void ) {
 	uint8_t opcode = mem_read( regs.pc );
@@ -164,7 +169,7 @@ void cpu_run_cycle( void ) {
 			mem_read( regs.pc + 1 ), mem_read16( regs.pc + 1 ), opcode );
  
 	if ( opcode <  0x40 ) { // 7/8
-		switch( opcode & 0x07 ) { 
+		switch( reg_selector ) { 
 			case 0x00: //done? concerned about this one
 				if ( ( opcode & 0x28 ) == 0 ) {
 					if ( ( opcode & 0x10 ) == 0 )
@@ -176,26 +181,25 @@ void cpu_run_cycle( void ) {
 					mem_write( mem_read16( regs.pc++ ), regs.sp );
 				else 
 					b = mem_read( regs.pc+1 );
-					a = opcode & 0x20 ? 
+					a = (( opcode & 0x20 ? 
 							opcode & 0x10 ? 
 								opcode & 0x08 ? regs.fc : !regs.fc 
-								: opcode & 0x08 ? regs.fz : !regs.fz
-						: b;
+								: opcode & 0x08 ? regs.fz : !regs.fz : 1 ) ? b : 0) + 2;
 				regs.pc += (int8_t)a;
 				return;
 			case 0x01: //done
 				if ( opcode & 0x80 ) {
-					*(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 ))) = mem_read16( regs.pc + 1 );
-					regs.pc += 3;
-				} else {
 					regs.hl = ( a = regs.hl ) + *(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 )));
 					f( regs.fz, 0, regs.hl < a, (regs.hl&0xF0) != (a&0xF0) )
 					regs.pc += 1;
+				} else {
+					*(&regs.bc + ( ( ( opcode & 0x30 ) >> 4 ))) = mem_read16( regs.pc + 1 );
+					regs.pc += 3;
 				}
 				return;
 			case 0x02: //done
 				if ( opcode & 0x08 )
-					regs.a = mem_read( opcode & 0x20 ? regs.hl : opcode & 0x10 ? regs.de : regs.bc );
+					regs.a = mem_read( opcode & 0x20 ? opcode&0x1?regs.hl--:regs.hl++ : opcode & 0x10 ? regs.de : regs.bc );
 				else
 					mem_write( opcode & 0x20 ? regs.hl : opcode & 0x10 ? regs.de : regs.bc, regs.a );
 				regs.pc++;
@@ -207,8 +211,9 @@ void cpu_run_cycle( void ) {
 			case 0x04: //done
 			case 0x05: //done
 				a = reg_read_indirect( op_selector ), b = a;
-				reg_write_indirect( op_selector, a + ( opcode & 0x01 ? -1 : 1 ) );
-				f( a==0, opcode & 0x01,  (a&0xF0) != (b&0xf0), regs.fc );
+				a += ( opcode & 0x01 ? -1 : 1 );
+				reg_write_indirect( op_selector, a );
+				f( (u8)a==0?1:0, opcode & 0x01,  (a&0xF0) != (b&0xf0), regs.fc );
 				regs.pc++;
 				return;
 			case 0x06: //done
@@ -230,9 +235,55 @@ void cpu_run_cycle( void ) {
 		regs.pc++;
 		return;
 	} else {
-		switch ( opcode ) {
-			case 0xC3:
-				regs.pc = mem_read16( regs.pc + 1 );
+		switch ( reg_selector ) {
+			case 0x00:
+				if ( opcode & 0x20 ) {
+				} else {
+					if ( (opcode & 0x10 ? opcode & 0x8 ? regs.fc : !regs.fc : opcode & 0x8 ? regs.fz : !regs.fz) == 1 )
+						regs.pc = (pop()) + ((uint16_t)(pop()) << 8);
+					else
+						regs.pc++;
+					return;
+				}
+				break;
+			case 0x01:
+				break;
+			case 0x02:
+				break;
+			case 0x03: //done
+				if ( opcode & 0xf0 )
+					regs.ifl = opcode & 0x08 > 0;
+				if ( opcode == 0xcb )
+					cb( opcode );
+				regs.pc = opcode == 0xc3 ? mem_read16( regs.pc + 1 ) : regs.pc + 1;
+				return;
+			case 0x04: //done? concerned about this one
+				if ( opcode & 0x10 ? opcode & 0x8 ? regs.fc : !regs.fc : opcode & 0x8 ? regs.fz : !regs.fz ) {
+					push( regs.pc >> 8 )
+					push( (u8)regs.pc )
+					regs.pc = mem_read16( ++regs.pc );
+				} else
+					regs.pc++;
+				return;
+			case 0x05: //done
+				if ( opcode & 0x08 ) {
+					push( regs.pc >> 8 )
+					push( (u8)regs.pc )
+					regs.pc = mem_read16( ++regs.pc );
+				} else {
+					push( opcode & 0xf0 ? regs.a : *(&regs.b + ( ( ( opcode & 0x30 ) >> 3 ))) )
+					push( opcode & 0xf0 ? regs.f : *(&regs.c + ( ( ( opcode & 0x30 ) >> 3 ))) )
+					regs.pc++;
+				}
+				return;
+			case 0x06: //done
+				alu_op( op_selector, mem_read( regs.pc + 1 ) );
+				regs.pc += 2;
+				return;
+			case 0x07: //done
+				push( regs.pc >> 8 )
+				push( (u8)regs.pc )
+				regs.pc = op_selector << 3;
 				return;
 			default:
 				break;
@@ -247,5 +298,11 @@ int main( int argc, char** argv ) {
 	FILE* f = fopen( argv[1], "r" );
 
 	printf( "%s:%ik\n", argv[1], fread( rom, 1, ROMSIZE, f ) / 1024 );
+	regs.af = 0x01b0;
+	regs.bc = 0x0013;
+	regs.de = 0x00d8;
+	regs.hl = 0x014d;
+	regs.sp = 0xfffe;
+	regs.pc = 0x100;
 	while (1) { cpu_run_cycle(); usleep( argc > 2 ? 500000 : 2 ); };
 }
