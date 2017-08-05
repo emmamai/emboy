@@ -1,3 +1,7 @@
+/*  Anyone reading this:
+This is BAD CODE and I'm writing it like that on purpose. 
+I can and do write better code. Just not here. */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -7,7 +11,7 @@
 
 #define u8 uint8_t
 #define u16 uint16_t
-#define dreg(x, y) union{struct{u8 y;u8 x;};u16 x##y;};
+#define dreg(x, y) union{struct{u8 y; u8 x;};u16 x##y;};
 
 struct regs_s{ 
 	union{struct{union{struct{
@@ -72,7 +76,7 @@ uint8_t mem_read( uint16_t addr ) {
 }
 
 uint16_t mem_read16( uint16_t address  ) {
-	return ( mem_read( address + 1 ) << 8 ) + mem_read( address ); // interrupt enable flag
+	return ( mem_read( address + 1 ) << 8 ) + mem_read( address );
 }
 
 void mem_write( uint16_t address, uint8_t value ) {
@@ -95,9 +99,7 @@ void mem_write( uint16_t address, uint8_t value ) {
 }
 
 uint8_t reg_read_indirect( ireg_t r ) {
-	if ( r == IREG_HL )
-		return mem_read( regs.hl );
-	return *ri[r];
+	return r == IREG_HL ? mem_read( regs.hl ) : *ri[r];
 }
 
 void reg_write_indirect( ireg_t r, uint8_t value ) {
@@ -160,12 +162,13 @@ void cpu_run_cycle( void ) {
 	printf( "Cycle Start - PC: %04x AF: %04x BC: %04x DE: %04x HL: %04x (HL): %04x SP: %04x imm8: %02x, imm16: %02x Ins: %02x\n",
 			regs.pc, regs.af, regs.bc, regs.de, regs.hl, mem_read( regs.hl ), regs.sp,
 			mem_read( regs.pc + 1 ), mem_read16( regs.pc + 1 ), opcode );
-
-	if ( opcode <  0x40 ) {
-		switch( opcode & 0x07 ) {
+ 
+	if ( opcode <  0x40 ) { // 7/8
+		switch( opcode & 0x07 ) { 
 			case 0x00: //done? concerned about this one
-				if ( opcode & 0x28 != 0 ) {
-					regs.pc++;
+				if ( ( opcode & 0x28 ) == 0 ) {
+					if ( ( opcode & 0x10 ) == 0 )
+						regs.pc++;
 					return;
 				}
 				a = 1;
@@ -212,19 +215,17 @@ void cpu_run_cycle( void ) {
 				reg_write_indirect( op_selector, mem_read( regs.pc+1 ) );
 				regs.pc+=2;
 				return;
-			case 0x07:
+			case 0x07: //NOT DONE
 			default:
 				break;
 		}
-
-		
-	} else if ( opcode < 0x80 ) {
+	} else if ( opcode < 0x80 ) { // DONE
 		if ( opcode == 0x76 ) // HALT
 			return;
 		reg_write_indirect( op_selector, reg_read_indirect( reg_selector ) );
 		regs.pc++;
 		return;
-	} else if ( opcode < 0xC0 ) {
+	} else if ( opcode < 0xC0 ) { // DONE
 		alu_op( op_selector, reg_read_indirect( reg_selector ) );
 		regs.pc++;
 		return;
@@ -245,6 +246,6 @@ void cpu_run_cycle( void ) {
 int main( int argc, char** argv ) {
 	FILE* f = fopen( argv[1], "r" );
 
-	printf( "%s:%ib\n", argv[1], fread( rom, 1, ROMSIZE, f ) );
+	printf( "%s:%ik\n", argv[1], fread( rom, 1, ROMSIZE, f ) / 1024 );
 	while (1) { cpu_run_cycle(); usleep( argc > 2 ? 500000 : 2 ); };
 }
