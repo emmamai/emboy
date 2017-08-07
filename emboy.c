@@ -6,7 +6,6 @@ I can and do write better code. Just not here. */
 #include <stdint.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <stdbool.h>
 
 #define ROMSIZE 1048576
 
@@ -39,18 +38,18 @@ struct regs_s{
 
 union {
 	struct {
-		uint8_t z:3;
-		uint8_t y:3;
-		uint8_t x:2;
+		u8 z:3;
+		u8 y:3;
+		u8 x:2;
 	};
-	uint8_t i;
+	u8 i;
 } opcode;
 
 #define f( z, n, h, c ) regs.fz=(z);regs.fn=(n);regs.fh=(h);regs.fc=(c);
 
 u8* ri[] = {&regs.b,&regs.c,&regs.d,&regs.e,&regs.h,&regs.l,0,&regs.a};
-uint16_t* rp[] = {&regs.bc,&regs.de,&regs.hl,&regs.sp};
-uint16_t* rp2[] = {&regs.bc,&regs.de,&regs.hl,&regs.af};
+u16* rp[] = {&regs.bc,&regs.de,&regs.hl,&regs.sp};
+u16* rp2[] = {&regs.bc,&regs.de,&regs.hl,&regs.af};
 
 typedef enum {
 	IREG_B = 0,
@@ -75,10 +74,10 @@ typedef enum {
 } alu_op_t;
 
 uint32_t romsize;
-uint8_t rom[ROMSIZE];
-uint8_t iram[8192];
+u8 rom[ROMSIZE];
+u8 iram[8192];
 
-uint8_t mem_read( uint16_t addr ) {
+u8 mem_read( u16 addr ) {
 	return 	addr < 0x8000 ? rom[addr] :
 			addr < 0xA000 ? 0 :
 			addr < 0xC000 ? 0 :
@@ -89,11 +88,9 @@ uint8_t mem_read( uint16_t addr ) {
 			0;
 }
 
-uint16_t mem_read16( uint16_t address  ) {
-	return ( mem_read( address + 1 ) << 8 ) + mem_read( address );
-}
+#define mem_read16( addr ) ((mem_read(addr+1)<<8)+mem_read(addr))
 
-void mem_write( uint16_t address, uint8_t value ) {
+void mem_write( u16 address, u8 value ) {
 	if ( address < 0x8000 ) {
 		; // ROM
 	} else if ( address < 0xA000 ) {
@@ -112,24 +109,24 @@ void mem_write( uint16_t address, uint8_t value ) {
 	return; // interrupt enable flag
 }
 
-void mem_write16( uint16_t address, uint16_t value ) {
-	mem_write( address, (uint8_t)(value & 0xFF) );
-	mem_write( address+1, (uint8_t)(value>>8)  );
+void mem_write16( u16 address, u16 value ) {
+	mem_write( address, (u8)(value & 0xFF) );
+	mem_write( address+1, (u8)(value>>8)  );
 }
 
-uint8_t reg_read_indirect( ireg_t r ) {
+u8 reg_read_indirect( ireg_t r ) {
 	return r == IREG_HL ? mem_read( regs.hl ) : *ri[r];
 }
 
-void reg_write_indirect( ireg_t r, uint8_t value ) {
+void reg_write_indirect( ireg_t r, u8 value ) {
 	if ( r == IREG_HL )
 		mem_write( regs.hl, value );
 	else
 		*ri[r] = value;
 }
 
-void alu_op( uint8_t op, ireg_t r ) {
-	uint8_t carry = regs.f;
+void alu_op( u8 op, ireg_t r ) {
+	u8 carry = regs.f;
 	u16 a = regs.a, s = reg_read_indirect( r );
 	u8 al = a & 0x0f, sl = s & 0x0f, hc;
 
@@ -176,25 +173,13 @@ void cb( u8 opcode ) {
 #define push(v) mem_write(regs.sp--,v);
 #define pop(v) mem_read(regs.sp++)
 
-/* 
-
-7 6 5 4 3 2 1 0
-|_| |___| |___|
- |    |     |
- X    Y     Z
-	|_| |
-	 |  |
-	 P  Q
-*/
-
 void cpu_run_cycle( void ) {
 	opcode.i = mem_read( regs.pc );
-	uint8_t q = opcode.y & 0x01;
-	uint8_t p = ( opcode.y >> 1 );
-	uint16_t a, b;
-	uint8_t z = regs.fz, c = regs.fc;
+	u8 q = opcode.y & 0x01;
+	u8 p = ( opcode.y >> 1 );
+	u16 a, b;
 	
-	bool nznc = ((!(p&1)&z)|(p&c))==q;
+	u8 nznc = ((!(p&1)&regs.fz)|(p&regs.fc))==q;
 
 	printf( "Cycle Start - PC: %04x AF: %04x BC: %04x DE: %04x HL: %04x (HL): %04x SP: %04x imm8: %02x, imm16: %02x Ins: %02x\n",
 			regs.pc, regs.af, regs.bc, regs.de, regs.hl, mem_read( regs.hl ), regs.sp,
@@ -213,7 +198,7 @@ void cpu_run_cycle( void ) {
 					mem_write( mem_read16( regs.pc++ ), regs.sp );
 				else 
 					b = mem_read( regs.pc+1 );
-					a = (( opcode.i & 0x20 ? nznc : 1 ) ? b : 0) + 2;
+					a = (( p & 0x2 ? nznc : 1 ) ? b : 0) + 2;
 				regs.pc += (int8_t)a;
 				return;
 			case 0x01: //done
@@ -234,7 +219,7 @@ void cpu_run_cycle( void ) {
 				regs.pc++;
 				return;
 			case 0x03: //done
-				*(&regs.bc + ( ( ( opcode.i & 0x30 ) >> 4 ))) += opcode.i & 0x8 ? -1 : 1;
+				rp[p] += q ? -1 : 1;
 				regs.pc++;
 				return;
 			case 0x04: //done
@@ -266,43 +251,50 @@ void cpu_run_cycle( void ) {
 	} else {
 		switch ( opcode.z ) {
 			case 0x00:
-				if ( opcode.i & 0x20 ) {
-					if ( opcode.i & 0x8 )
-						;
+				if ( p & 0x2 ) {
+					if ( p & 0x1 )
+						regs.a = mem_read( q?mem_read16(++regs.pc):(0xff00+mem_read(regs.pc+1)) );
 					else
-						;
+						mem_write( q?mem_read16(++regs.pc):(0xff00+mem_read(regs.pc+1)), regs.a );
+					regs.pc+=2;
 				} else {
-					if ( (opcode.i & 0x10 ? opcode.i & 0x8 ? regs.fc : !regs.fc : opcode.i & 0x8 ? regs.fz : !regs.fz) == 1 )
-						regs.pc = (pop()) + ((uint16_t)(pop()) << 8);
+					if ( nznc )
+						regs.pc = (pop()) + ((u16)(pop()) << 8);
 					else
 						regs.pc++;
-					return;
 				}
-				break;
+				return;
 			case 0x01:
-				break;
+				if ( q )
+					*rp2[opcode.x] = (pop()) + ((u16)(pop())<<8);
+				else if ( p < 0x3 )
+					regs.pc = p&2?(pop()) + ((u16)(pop()) << 8):mem_read(regs.hl);
+				else
+					regs.sp = regs.hl;
+				regs.pc++;
+				return;
 			case 0x02:
-				if ( opcode.i & 0xe0 ) {
-					if ( opcode.i & 0x1 )
-						regs.a = mem_read( opcode.i & 0x8 ? mem_read16( ++regs.pc ) :  0xFF00 + regs.c );
+				if ( p & 0x2 ) {
+					if ( p & 0x1 )
+						regs.a = mem_read( q ? mem_read16( ++regs.pc ) :  0xFF00 + regs.c );
 					else
-						mem_write16( opcode.i & 0x8 ? mem_read( ++regs.pc ) : 0xFF00 + regs.c, regs.a );
+						mem_write16( q ? mem_read( ++regs.pc ) : 0xFF00 + regs.c, regs.a );
 					regs.pc += 2;
 				} else
-					if ( opcode.i & 0x10 ? opcode.i & 0x8 ? regs.fc : !regs.fc : opcode.i & 0x8 ? regs.fz : !regs.fz )
+					if ( nznc )
 						regs.pc = mem_read16( regs.pc );
 					else
 						regs.pc += 3;
 				return;
 			case 0x03: //done
-				if ( opcode.i & 0xf0 )
-					regs.ifl = opcode.i & 0x08 > 0;
+				if ( p & 0x2 )
+					regs.ifl = q;
 				if ( opcode.i == 0xcb )
 					cb( opcode.i );
 				regs.pc = opcode.i == 0xc3 ? mem_read16( regs.pc + 1 ) : regs.pc + 1;
 				return;
-			case 0x04: //done? concerned about this one
-				if ( opcode.i & 0x10 ? opcode.i & 0x8 ? regs.fc : !regs.fc : opcode.i & 0x8 ? regs.fz : !regs.fz ) {
+			case 0x04:
+				if ( nznc ) {
 					push( regs.pc >> 8 )
 					push( (u8)regs.pc )
 					regs.pc = mem_read16( ++regs.pc );
@@ -310,13 +302,13 @@ void cpu_run_cycle( void ) {
 					regs.pc++;
 				return;
 			case 0x05: //done
-				if ( opcode.i & 0x08 ) {
+				if ( q ) {
 					push( regs.pc >> 8 )
 					push( (u8)regs.pc )
 					regs.pc = mem_read16( ++regs.pc );
 				} else {
-					push( opcode.i & 0xf0 ? regs.a : *(&regs.b + ( ( ( opcode.i & 0x30 ) >> 3 ))) )
-					push( opcode.i & 0xf0 ? regs.f : *(&regs.c + ( ( ( opcode.i & 0x30 ) >> 3 ))) )
+					push( *rp[opcode.x] >> 8 )
+					push( *rp[opcode.x] )
 					regs.pc++;
 				}
 				return;
@@ -348,5 +340,5 @@ int main( int argc, char** argv ) {
 	regs.hl = 0x014d;
 	regs.sp = 0xfffe;
 	regs.pc = 0x100;
-	while (1) { cpu_run_cycle(); usleep( argc > 2 ? 500000 : 2 ); };
+	while (1) { cpu_run_cycle(); usleep( argc > 2 ? 500000 : 2 ); getchar(); };
 }
