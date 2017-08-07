@@ -76,6 +76,7 @@ typedef enum {
 uint32_t romsize;
 u8 rom[ROMSIZE];
 u8 iram[8192];
+u8 hram[0x80];
 
 u8 mem_read( u16 addr ) {
 	return 	addr < 0x8000 ? rom[addr] :
@@ -84,7 +85,7 @@ u8 mem_read( u16 addr ) {
 			addr < 0xFE00 ? iram[addr & 0x1FFF] :
 			addr < 0xFEA0 ? 0 :
 			addr < 0xFF80 ? 0 :
-			addr < 0xFFFF ? 0 :
+			addr < 0xFFFF ? hram[addr&0x7F] :
 			0;
 }
 
@@ -104,7 +105,7 @@ void mem_write( u16 address, u8 value ) {
 	} else if ( address < 0xFF80 ) {
 		; // hardware registers
 	} else if ( address < 0xFFFF ) {
-		; // zero page
+		hram[address&0x7f] = value;
 	}
 	return; // interrupt enable flag
 }
@@ -171,7 +172,7 @@ void cb( u8 opcode ) {
 }
 
 #define push(v) mem_write(regs.sp--,v);
-#define pop(v) mem_read(regs.sp++)
+#define pop(v) mem_read(++regs.sp)
 
 void cpu_run_cycle( void ) {
 	opcode.i = mem_read( regs.pc );
@@ -265,13 +266,14 @@ void cpu_run_cycle( void ) {
 				}
 				return;
 			case 0x01:
-				if ( q )
+				if ( !q )
 					*rp2[opcode.x] = (pop()) + ((u16)(pop())<<8);
 				else if ( p < 0x3 )
-					regs.pc = p&2?(pop()) + ((u16)(pop()) << 8):mem_read(regs.hl);
+					regs.pc = p&2?mem_read(regs.hl):((pop()) + ((u16)(pop())<<8)
+					|((regs.ifl== (p&1)?1:regs.ifl)&0)
+					);
 				else
-					regs.sp = regs.hl;
-				regs.pc++;
+					regs.sp = regs.hl | (regs.pc++ & 0);
 				return;
 			case 0x02:
 				if ( p & 0x2 ) {
@@ -303,9 +305,9 @@ void cpu_run_cycle( void ) {
 				return;
 			case 0x05: //done
 				if ( q ) {
-					push( regs.pc >> 8 )
-					push( (u8)regs.pc )
-					regs.pc = mem_read16( ++regs.pc );
+					push( (regs.pc+=3) >> 8 )
+					push( regs.pc )
+					regs.pc = mem_read16( regs.pc-2 );
 				} else {
 					push( *rp[opcode.x] >> 8 )
 					push( *rp[opcode.x] )
