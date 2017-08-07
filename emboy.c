@@ -173,6 +173,8 @@ void cb( u8 opcode ) {
 
 #define push(v) mem_write(regs.sp--,v);
 #define pop(v) mem_read(++regs.sp)
+#define rst(i,v) push((regs.pc+=i)>>8)push(regs.pc)regs.pc=v;
+#define call() rst(3,mem_read16(regs.pc-2));
 
 void cpu_run_cycle( void ) {
 	opcode.i = mem_read( regs.pc );
@@ -203,20 +205,21 @@ void cpu_run_cycle( void ) {
 				regs.pc += (int8_t)a;
 				return;
 			case 0x01: //done
-				if ( opcode.i & 0x80 ) {
-					regs.hl = ( a = regs.hl ) + *(&regs.bc + ( ( ( opcode.i & 0x30 ) >> 4 )));
+				if ( q ) {
+					regs.hl = ( a = regs.hl ) + *rp[opcode.y];
 					f( regs.fz, 0, regs.hl < a, (regs.hl&0xF0) != (a&0xF0) )
 					regs.pc += 1;
 				} else {
-					*(&regs.bc + ( ( ( opcode.i & 0x30 ) >> 4 ))) = mem_read16( regs.pc + 1 );
+					*rp[opcode.y] = mem_read16( regs.pc + 1 );
 					regs.pc += 3;
 				}
 				return;
 			case 0x02: //done
-				if ( opcode.i & 0x08 )
-					regs.a = mem_read( opcode.i & 0x20 ? opcode.i&0x1?regs.hl--:regs.hl++ : opcode.i & 0x10 ? regs.de : regs.bc );
+				a = p&2?opcode.i&0x1?regs.hl--:regs.hl++:p&1?regs.de:regs.bc;
+				if ( q )
+					regs.a = mem_read( a );
 				else
-					mem_write( opcode.i & 0x20 ? regs.hl : opcode.i & 0x10 ? regs.de : regs.bc, regs.a );
+					mem_write( a, regs.a );
 				regs.pc++;
 				return;
 			case 0x03: //done
@@ -297,17 +300,13 @@ void cpu_run_cycle( void ) {
 				return;
 			case 0x04:
 				if ( nznc ) {
-					push( regs.pc >> 8 )
-					push( (u8)regs.pc )
-					regs.pc = mem_read16( ++regs.pc );
+					call()
 				} else
 					regs.pc++;
 				return;
 			case 0x05: //done
 				if ( q ) {
-					push( (regs.pc+=3) >> 8 )
-					push( regs.pc )
-					regs.pc = mem_read16( regs.pc-2 );
+					call()
 				} else {
 					push( *rp[opcode.x] >> 8 )
 					push( *rp[opcode.x] )
@@ -319,9 +318,7 @@ void cpu_run_cycle( void ) {
 				regs.pc += 2;
 				return;
 			case 0x07: //done
-				push( regs.pc >> 8 )
-				push( (u8)regs.pc )
-				regs.pc = opcode.y << 3;
+				rst(1,opcode.y<<3);
 				return;
 			default:
 				break;
