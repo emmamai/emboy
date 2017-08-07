@@ -13,4 +13,4 @@ Run it like this:
     ./emboy <romfile.gb>
 
 At the moment, it does not have graphics, sound, or input, and only emulates about
-36% of the gbz80 instructions. But it's a start.
+47% of the gbz80 instructions (badly, probably). But it's a start.
